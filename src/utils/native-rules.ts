@@ -21,8 +21,9 @@ function pattern(value: unknown): StringOrRegExp | undefined {
   if (typeof value === 'string')
     return value
   if (typeof value === 'object' && value !== null && !types.isProxy(value) && value instanceof RegExp && Object.getPrototypeOf(value) === RegExp.prototype
-    && !Object.hasOwn(value, 'source') && !Object.hasOwn(value, 'flags') && !Object.hasOwn(value, 'test'))
+    && !Object.hasOwn(value, 'source') && !Object.hasOwn(value, 'flags') && !Object.hasOwn(value, 'test')) {
     return new RegExp(value.source, value.flags)
+  }
 }
 
 function patterns(value: unknown): StringOrRegExp[] | undefined {
@@ -86,11 +87,13 @@ function snapshot(plugin: ResolvedUnpluginOptions, name: 'load' | 'transform'): 
 function nativePatterns(filter: StringFilter | undefined): { include?: RegExp[], exclude?: RegExp[] } | undefined {
   let include: StringOrRegExp[] = []
   let exclude: StringOrRegExp[] = []
-  if (Array.isArray(filter))
+  if (Array.isArray(filter)) {
     include = filter
+  }
   else if (filter) {
-    if (typeof filter === 'string' || filter instanceof RegExp)
+    if (typeof filter === 'string' || filter instanceof RegExp) {
       include = [filter]
+    }
     else {
       include = filter.include ? Array.isArray(filter.include) ? filter.include : [filter.include] : []
       exclude = filter.exclude ? Array.isArray(filter.exclude) ? filter.exclude : [filter.exclude] : []
@@ -122,11 +125,14 @@ function nativePatterns(filter: StringFilter | undefined): { include?: RegExp[],
 }
 
 // Both path normalizers leave these POSIX paths untouched. Others use JS.
+// eslint-disable-next-line regexp/no-useless-assertions, regexp/prefer-predefined-assertion
 const CANONICAL_RESOURCE = /^(?![\s\S]*\/\/)(?![\s\S]*(?:^|\/)\.{1,2}(?:\/|$))(?![\s\S]*\/$)[\w./ -]+$(?![\s\S])/
+// Unlike $, this cannot accept the position before a trailing newline.
+// eslint-disable-next-line regexp/prefer-predefined-assertion
 const EMPTY = /^(?![\s\S])/
 
 export function prepareNativeRule(
-  compiler: { options: { module: { rules: any[] } }, hooks: { beforeRun: { tap: Function }, watchRun: { tap: Function } } },
+  compiler: { options: { module: { rules: any[] } }, hooks: { beforeRun: { tap: (options: { name: string, stage: number }, callback: () => void) => void }, watchRun: { tap: (options: { name: string, stage: number }, callback: () => void) => void } } },
   plugin: ResolvedUnpluginOptions,
   name: 'load' | 'transform',
   rule: RuleSetRule,
@@ -172,5 +178,10 @@ export function prepareNativeRule(
   // first build start. Snapshot after other start taps, never during apply.
   compiler.hooks.beforeRun.tap({ name: plugin.name, stage: Number.POSITIVE_INFINITY }, start)
   compiler.hooks.watchRun.tap({ name: plugin.name, stage: Number.POSITIVE_INFINITY }, start)
-  return { filter: id => idFilter ? idFilter(id) : true, get snapshot() { return idFilter !== undefined } }
+  return {
+    filter: id => idFilter ? idFilter(id) : true,
+    get snapshot() {
+      return idFilter !== undefined
+    },
+  }
 }

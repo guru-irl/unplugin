@@ -10,7 +10,14 @@ import webpackTransform from '../../../src/webpack/loaders/transform'
 
 function createStartHook() {
   const callbacks: (() => void)[] = []
-  return { tap(_name: unknown, callback: () => void) { callbacks.push(callback) }, async promise(_compiler: unknown) { for (const callback of callbacks) callback() } }
+  return {
+    tap(_name: unknown, callback: () => void) {
+      callbacks.push(callback)
+    },
+    async promise(_compiler: unknown) {
+      for (const callback of callbacks) callback()
+    },
+  }
 }
 
 function setup(getPlugin: typeof getRspackPlugin | typeof getWebpackPlugin, definition: UnpluginOptions) {
@@ -24,7 +31,7 @@ function setup(getPlugin: typeof getRspackPlugin | typeof getWebpackPlugin, defi
   return compiler
 }
 
-function condition(condition: any, value: string): boolean {
+function conditionMatch(condition: any, value: string): boolean {
   if (condition == null)
     return true
   if (condition instanceof RegExp)
@@ -37,14 +44,14 @@ function condition(condition: any, value: string): boolean {
     && (!condition.or || condition.or.some((item: any) => conditionMatch(item, value)))
     && (!condition.not || !conditionMatch(condition.not, value))
 }
-const conditionMatch = condition
 
 function uses(rules: any[], resource: string, resourceQuery = '', resourceFragment = ''): any[] {
   return rules.flatMap((rule) => {
-    if (!condition(rule.resource, resource) || !condition(rule.resourceQuery, resourceQuery)
-      || !condition(rule.resourceFragment, resourceFragment)
-      || !condition(rule.include, resource) || (rule.exclude && condition(rule.exclude, resource)))
+    if (!conditionMatch(rule.resource, resource) || !conditionMatch(rule.resourceQuery, resourceQuery)
+      || !conditionMatch(rule.resourceFragment, resourceFragment)
+      || !conditionMatch(rule.include, resource) || (rule.exclude && conditionMatch(rule.exclude, resource))) {
       return []
+    }
     if (rule.rules)
       return uses(rule.rules, resource, resourceQuery, resourceFragment)
     return typeof rule.use === 'function' ? rule.use({ resource, resourceQuery, resourceFragment }) : rule.use || []
@@ -99,11 +106,20 @@ describe.each([[getRspackPlugin, rspackTransform], [getWebpackPlugin, webpackTra
 
   it('keeps accessor, Proxy, function, legacy and unsafe filters on the lazy JS path', async () => {
     let reads = 0
-    const accessor = { get filter() { reads++; return { id: '**/*.ts' } }, handler: (code: string) => code }
-    const hooks = [accessor, new Proxy({ filter: { id: '**/*.ts' }, handler: (code: string) => code }, {}),
+    const accessor = {
+      get filter() {
+        reads++
+        return { id: '**/*.ts' }
+      },
+      handler: (code: string) => code,
+    }
+    const hooks = [
+      accessor,
+      new Proxy({ filter: { id: '**/*.ts' }, handler: (code: string) => code }, {}),
       { filter: { id: /\.ts$/g }, handler: (code: string) => code },
       { filter: { id: '!**/*.js' }, handler: (code: string) => code },
-      (code: string) => code]
+      (code: string) => code,
+    ]
     for (const transform of hooks) {
       const compiler = setup(getPlugin, { name: 'lazy', transform })
       await compiler.hooks.beforeRun.promise(compiler)
@@ -138,7 +154,11 @@ describe.each([[getRspackPlugin, rspackTransform], [getWebpackPlugin, webpackTra
       const plugin = selected[0].options.plugin
       plugin.transform = { filter: { id: '*.js' }, handler: (code: string) => `${code}:replacement` }
       let result: unknown
-      await (loader as typeof rspackTransform).call({ query: selected[0].options, resource: resolve(second, 'mod.ts'), async: () => (error: Error | null, code: string) => { if (error) throw error; result = code } } as any, 'source', undefined)
+      await (loader as typeof rspackTransform).call({ query: selected[0].options, resource: resolve(second, 'mod.ts'), async: () => (error: Error | null, code: string) => {
+        if (error)
+          throw error
+        result = code
+      } } as any, 'source', undefined)
       expect(result).toBe('source:replacement')
       await compiler.hooks.beforeRun.promise(compiler)
       expect(uses(compiler.options.module.rules, resolve(second, 'mod.ts'))).toHaveLength(1)
