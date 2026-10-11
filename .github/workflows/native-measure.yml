@@ -1,0 +1,54 @@
+name: native measure
+on:
+  push:
+    branches: [perf/native-measure]
+permissions:
+  contents: read
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sxzz/workflows/setup-js@main
+      - run: pnpm run build && pnpm run typecheck
+      - run: pnpm exec vitest run test/unit-tests/filter/native-rules.test.ts
+      - name: Query guard mutation
+        run: |
+          cp src/utils/native-rules.ts measure/native-rules.original
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/utils/native-rules.ts')
+          p.write_text(p.read_text().replace('resourceQuery: EMPTY, resourceFragment: EMPTY, use','resourceFragment: EMPTY, use'))
+          PY
+          if pnpm exec vitest run test/unit-tests/filter/native-rules.test.ts; then exit 1; fi
+          mv measure/native-rules.original src/utils/native-rules.ts
+  measure:
+    needs: validation
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: sxzz/workflows/setup-js@main
+        with:
+          node-version: 22
+      - run: pnpm run build
+      - name: Build baseline from the same dependencies
+        run: |
+          git worktree add --detach baseline 804204dd4c63f1c52755c8933b67912b78ba4cb2
+          ln -s ../node_modules baseline/node_modules
+          cd baseline
+          ../node_modules/.bin/tsdown
+      - name: Paired fresh processes
+        run: |
+          cd measure
+          mkdir -p scratch
+          export TMPDIR="$PWD/scratch"
+          node generate.mjs
+          python3 series.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-${{ matrix.os }}
+          path: measure/results
