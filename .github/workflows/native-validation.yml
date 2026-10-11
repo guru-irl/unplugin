@@ -1,5 +1,8 @@
 name: native validation
-on: workflow_dispatch
+on:
+  push:
+    branches: [test/native-rule-red]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
