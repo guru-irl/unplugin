@@ -20,7 +20,7 @@ function data(object: object, key: string): { value: unknown } | undefined {
 function pattern(value: unknown): StringOrRegExp | undefined {
   if (typeof value === 'string')
     return value
-  if (value instanceof RegExp && !types.isProxy(value) && Object.getPrototypeOf(value) === RegExp.prototype
+  if (typeof value === 'object' && value !== null && !types.isProxy(value) && value instanceof RegExp && Object.getPrototypeOf(value) === RegExp.prototype
     && !Object.hasOwn(value, 'source') && !Object.hasOwn(value, 'flags') && !Object.hasOwn(value, 'test'))
     return new RegExp(value.source, value.flags)
 }
@@ -122,8 +122,8 @@ function nativePatterns(filter: StringFilter | undefined): { include?: RegExp[],
 }
 
 // Both path normalizers leave these POSIX paths untouched. Others use JS.
-const CANONICAL_RESOURCE = /^(?!.*\\)(?!.*\/\/)(?!.*(?:^|\/)\.{1,2}(?:\/|$))(?!.*\/$)[\s\S]+$/
-const EMPTY = /^$/
+const CANONICAL_RESOURCE = /^(?![\s\S]*\/\/)(?![\s\S]*(?:^|\/)\.{1,2}(?:\/|$))(?![\s\S]*\/$)[\w./ -]+$(?![\s\S])/
+const EMPTY = /^(?![\s\S])/
 
 export function prepareNativeRule(
   compiler: { options: { module: { rules: any[] } }, hooks: { beforeRun: { tap: Function }, watchRun: { tap: Function } } },
