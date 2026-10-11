@@ -3,3 +3,7 @@ cache/
 output/
 results/
 scratch/
+diagnostic-results/
+round2-results/
+attribution-results/
+rspack-symbols/
