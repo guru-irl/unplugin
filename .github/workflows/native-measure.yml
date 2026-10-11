@@ -1,11 +1,28 @@
-name: native diagnosis round 2
+name: native measure
 on:
   push:
     branches: [perf/native-measure]
 permissions:
   contents: read
 jobs:
-  diagnostic:
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sxzz/workflows/setup-js@main
+      - run: pnpm run build && pnpm run typecheck
+      - run: pnpm exec vitest run test/unit-tests/filter/native-rules.test.ts
+      - name: Query guard mutation
+        run: |
+          cp src/utils/native-rules.ts measure/native-rules.original
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/utils/native-rules.ts')
+          p.write_text(p.read_text().replace('resourceQuery: EMPTY, resourceFragment: EMPTY, use','resourceFragment: EMPTY, use'))
+          PY
+          if pnpm exec vitest run test/unit-tests/filter/native-rules.test.ts; then exit 1; fi
+          mv measure/native-rules.original src/utils/native-rules.ts
+  measure:
+    needs: validation
     strategy:
       fail-fast: false
       matrix:
@@ -16,94 +33,23 @@ jobs:
       - uses: sxzz/workflows/setup-js@main
         with:
           node-version: 22
-      - run: pnpm run build && pnpm run typecheck
-      - run: pnpm exec vitest run test/unit-tests/filter/native-rules.test.ts
-      - name: Build pinned baseline with the same dependencies
+      - run: pnpm run build
+      - name: Build baseline from the same dependencies
         run: |
           git fetch origin 804204dd4c63f1c52755c8933b67912b78ba4cb2
           git worktree add --detach baseline 804204dd4c63f1c52755c8933b67912b78ba4cb2
           ln -s ../node_modules baseline/node_modules
           cd baseline
           ../node_modules/.bin/tsdown
-      - name: Separate diagnostic pairs, glob then RegExp
+      - name: Paired fresh processes
         run: |
           cd measure
           mkdir -p scratch
           export TMPDIR="$PWD/scratch"
           node generate.mjs
-          for kind in glob regexp hook-shapes; do
-            export FILTER_KIND="$kind"
-            if [ "$(uname)" = Linux ]; then
-              python3 round2-series.py
-            else
-              python3 round2-macos-series.py
-            fi
-          done
-          python3 round2-summary.py
+          python3 series.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: round2-${{ matrix.os }}
-          path: measure/round2-results
-  attribution:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    steps:
-      - uses: sxzz/workflows/setup-js@main
-        with:
-          node-version: 22
-      - run: pnpm run build
-      - name: Build pinned baseline with the same dependencies
-        run: |
-          git fetch origin 804204dd4c63f1c52755c8933b67912b78ba4cb2
-          git worktree add --detach baseline 804204dd4c63f1c52755c8933b67912b78ba4cb2
-          ln -s ../node_modules baseline/node_modules
-          cd baseline
-          ../node_modules/.bin/tsdown
-      - name: Build diagnostic binding with symbols
-        id: symbols
-        continue-on-error: true
-        run: |
-          mkdir -p measure/scratch measure/attribution-results
-          export TMPDIR="$PWD/measure/scratch"
-          sudo apt-get update -qq
-          sudo apt-get install -y linux-tools-common linux-tools-generic linux-tools-$(uname -r)
-          sudo sysctl kernel.perf_event_paranoid=-1
-          git clone --depth 1 --branch v2.2.5 https://github.com/web-infra-dev/rspack.git measure/rspack-symbols
-          cd measure/rspack-symbols
-          RUSTFLAGS="-C force-frame-pointers=yes -C force-unwind-tables=yes" cargo build --locked -p rspack_node --profile profiling --features plugin,info-level
-          cd ../..
-          BINDING=$(find node_modules/.pnpm -path '*/@rspack/binding-linux-x64-gnu/rspack.linux-x64-gnu.node' | head -1)
-          test -n "$BINDING"
-          cp "$BINDING" measure/scratch/release.node
-          cp measure/rspack-symbols/target/profiling/librspack_node.so "$BINDING"
-          printf '%s\n' "$BINDING" > measure/attribution-results/binding-path.txt
-      - name: Profile separate warm runs, never gate samples
-        if: always()
-        run: |
-          cd measure
-          mkdir -p scratch attribution-results
-          export TMPDIR="$PWD/scratch"
-          node generate.mjs
-          echo 'symbols step: ${{ steps.symbols.outcome }}' > attribution-results/status.txt
-          for kind in glob regexp; do
-            export FILTER_KIND="$kind"
-            for arm in base native; do
-              node --max-old-space-size=8192 run.mjs "$arm" cold attribution > "attribution-results/$kind-$arm-cold.log"
-              if command -v perf >/dev/null && perf stat true; then
-                perf record -F 199 -g --call-graph dwarf,16384 -o "attribution-results/$kind-$arm.data" -- node --max-old-space-size=8192 run.mjs "$arm" warm attribution > "attribution-results/$kind-$arm-warm.log"
-                perf report --stdio -i "attribution-results/$kind-$arm.data" --no-children --percent-limit 0.25 > "attribution-results/$kind-$arm-report.txt"
-                perf report --stdio -i "attribution-results/$kind-$arm.data" --children --percent-limit 1 > "attribution-results/$kind-$arm-callers.txt"
-                perf buildid-list -i "attribution-results/$kind-$arm.data" > "attribution-results/$kind-$arm-buildids.txt"
-              else
-                echo 'not attributed: perf unavailable' >> attribution-results/status.txt
-              fi
-              rm -rf "cache/$kind-$arm-attribution"
-            done
-          done
-          du -sh attribution-results
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: round2-attribution
-          path: measure/attribution-results
+          name: native-${{ matrix.os }}
+          path: measure/results
