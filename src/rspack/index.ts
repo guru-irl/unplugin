@@ -14,6 +14,7 @@ import { resolve } from 'node:path'
 import { version as unpluginVersion } from '../../package.json'
 import { normalizeObjectHook } from '../utils/filter'
 import { toArray } from '../utils/general'
+import { prepareNativeRule } from '../utils/native-rules'
 import { createCachedIdFilter, normalizeAbsolutePath, transformUse } from '../utils/webpack-like'
 import { createBuildContext, normalizeMessage } from './context'
 import { decodeVirtualModuleId, encodeVirtualModuleId, FakeVirtualModulesPlugin, isVirtualModuleId } from './utils'
@@ -197,10 +198,12 @@ function applyRspackPlugins(
 
     // load hook
     if (plugin.load) {
-      const filter = createCachedIdFilter(() => plugin.load!)
-      compiler.options.module.rules.unshift({
+      const lazyFilter = createCachedIdFilter(() => plugin.load!)
+      let prepared: { filter: PluginFilter, snapshot: boolean } | undefined
+      const filter: PluginFilter = id => prepared?.snapshot ? prepared.filter(id) : lazyFilter(id)
+      const rule = {
         enforce: plugin.enforce,
-        include(id) {
+        include(id: string) {
           if (isVirtualModuleId(id, plugin))
             id = decodeVirtualModuleId(id, plugin)
 
@@ -221,19 +224,25 @@ function applyRspackPlugins(
           },
         }],
         type: 'javascript/auto',
-      })
+      }
+      compiler.options.module.rules.unshift(rule)
+      prepared = prepareNativeRule(compiler, plugin, 'load', rule, rule.use)
     }
 
     // transform hook
     if (plugin.transform) {
       // Only the id filter applies here; the loader checks the code filter.
-      const filter = createCachedIdFilter(() => plugin.transform!)
-      compiler.options.module.rules.unshift({
+      const lazyFilter = createCachedIdFilter(() => plugin.transform!)
+      let prepared: { filter: PluginFilter, snapshot: boolean } | undefined
+      const filter: PluginFilter = id => prepared?.snapshot ? prepared.filter(id) : lazyFilter(id)
+      const rule = {
         enforce: plugin.enforce,
-        use(data) {
+        use(data: { resource?: string, resourceQuery?: string }) {
           return transformUse(data, plugin, TRANSFORM_LOADER, filter)
         },
-      })
+      }
+      compiler.options.module.rules.unshift(rule)
+      prepared = prepareNativeRule(compiler, plugin, 'transform', rule, [{ loader: TRANSFORM_LOADER, options: { plugin }, ident: plugin.name }])
     }
 
     if (meta.framework === 'rspack' && plugin.rspack)

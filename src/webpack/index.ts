@@ -8,6 +8,7 @@ import process from 'node:process'
 import { version as unpluginVersion } from '../../package.json'
 import { normalizeObjectHook } from '../utils/filter'
 import { toArray } from '../utils/general'
+import { prepareNativeRule } from '../utils/native-rules'
 import { createCachedIdFilter, normalizeAbsolutePath, transformUse } from '../utils/webpack-like'
 import { contextOptionsFromCompilation, createBuildContext, normalizeMessage } from './context'
 
@@ -179,9 +180,11 @@ export function getWebpackPlugin<UserOptions = Record<string, never>>(
 
           // load hook
           if (plugin.load) {
-            const filter = createCachedIdFilter(() => plugin.load!)
-            compiler.options.module.rules.unshift({
-              include(id) {
+            const lazyFilter = createCachedIdFilter(() => plugin.load!)
+            let prepared: { filter: PluginFilter, snapshot: boolean } | undefined
+            const filter: PluginFilter = id => prepared?.snapshot ? prepared.filter(id) : lazyFilter(id)
+            const rule = {
+              include(id: string) {
                 return shouldLoad(id, plugin, externalModules, filter)
               },
               enforce: plugin.enforce,
@@ -192,19 +195,25 @@ export function getWebpackPlugin<UserOptions = Record<string, never>>(
                 },
               }],
               type: 'javascript/auto',
-            })
+            }
+            compiler.options.module.rules.unshift(rule)
+            prepared = prepareNativeRule(compiler, plugin, 'load', rule, rule.use)
           }
 
           // transform hook
           if (plugin.transform) {
             // Only the id filter applies here; the loader checks the code filter.
-            const filter = createCachedIdFilter(() => plugin.transform!)
-            compiler.options.module.rules.unshift({
+            const lazyFilter = createCachedIdFilter(() => plugin.transform!)
+            let prepared: { filter: PluginFilter, snapshot: boolean } | undefined
+            const filter: PluginFilter = id => prepared?.snapshot ? prepared.filter(id) : lazyFilter(id)
+            const rule = {
               enforce: plugin.enforce,
               use(data: { resource?: string, resourceQuery?: string }) {
                 return transformUse(data, plugin, TRANSFORM_LOADER, filter)
               },
-            })
+            }
+            compiler.options.module.rules.unshift(rule)
+            prepared = prepareNativeRule(compiler, plugin, 'transform', rule, [{ loader: TRANSFORM_LOADER, options: { plugin }, ident: plugin.name }])
           }
 
           if (plugin.webpack)

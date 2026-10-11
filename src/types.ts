@@ -161,6 +161,7 @@ export interface UnpluginOptions {
 
 export interface ResolvedUnpluginOptions extends UnpluginOptions {
   // injected internal objects
+  __transformFilterSnapshot?: ((id: string, code: string) => boolean) | undefined
   __vfs?: VirtualModulesPlugin | undefined
   __vfsModules?: Map<string, Promise<unknown>> | Set<string> | undefined
   __virtualModulePrefix: string

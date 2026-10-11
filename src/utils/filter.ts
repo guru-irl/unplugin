@@ -28,7 +28,7 @@ interface NormalizedStringFilter {
   exclude?: StringOrRegExp[]
 }
 
-function getMatcherString(glob: string, cwd: string) {
+export function getMatcherString(glob: string, cwd: string): string {
   if (glob.startsWith('**') || isAbsolute(glob)) {
     return normalize(glob)
   }

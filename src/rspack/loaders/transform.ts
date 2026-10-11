@@ -25,7 +25,7 @@ export default async function transform(
   const cwd = process.cwd()
   let cached = filters.get(hook)
   let handler: HookFnMap['transform']
-  if (cached?.cwd === cwd) {
+  if (plugin.__transformFilterSnapshot || cached?.cwd === cwd) {
     handler = typeof hook === 'function' ? hook : hook.handler
   }
   else {
@@ -34,7 +34,7 @@ export default async function transform(
     cached = { cwd, filter: normalized.filter }
     filters.set(hook, cached)
   }
-  const { filter } = cached
+  const filter = plugin.__transformFilterSnapshot ?? cached!.filter
   if (!filter(this.resource, source))
     return callback(null, source, map)
 

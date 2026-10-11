@@ -30,7 +30,7 @@ describe('transform', () => {
           options: { context: firstCwd, module: { rules: [] as any[] } },
           rspack: { version: '2.0.0', experiments: {} },
           webpack: { version: '5.0.0' },
-          hooks: { make: { tapPromise(_name: string, callback: typeof start) { start = callback } } },
+          hooks: { beforeRun: { tap() {} }, watchRun: { tap() {} }, make: { tapPromise(_name: string, callback: typeof start) { start = callback } } },
         }
         getPlugin(() => ({
           name: 'lazy-filter',
