@@ -36,6 +36,7 @@ jobs:
       - run: pnpm run build
       - name: Build baseline from the same dependencies
         run: |
+          git fetch origin 804204dd4c63f1c52755c8933b67912b78ba4cb2
           git worktree add --detach baseline 804204dd4c63f1c52755c8933b67912b78ba4cb2
           ln -s ../node_modules baseline/node_modules
           cd baseline
